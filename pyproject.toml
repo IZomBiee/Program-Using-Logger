@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "program_using_logger"
+version = "1.0.0"
+description = ""
+authors = ["IZomBie <patrik009009@gmail.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+matplotlib = "^3.10.1"
+psutil = "^7.0.0"
+pynput = "^1.8.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

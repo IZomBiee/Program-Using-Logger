@@ -1,0 +1,9 @@
+*.csv
+__pycache__
+.vscode
+.log
+*.json
+logs
+.idea
+idea
+*.log
