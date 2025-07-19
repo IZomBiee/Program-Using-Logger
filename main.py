@@ -4,6 +4,8 @@ import psutil
 import ctypes
 import logging
 
+from tkinter import messagebox
+from pynput import mouse, keyboard
 from datetime import datetime
 from ctypes import wintypes
 
@@ -56,7 +58,7 @@ def get_active_window_name() -> str:
 
 def get_logger() -> logging.Logger:
     logger = logging.getLogger("logger")
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
@@ -69,6 +71,11 @@ def get_logger() -> logging.Logger:
     logger.addHandler(console_handler)
     return logger
 
+last_time_moved = time.perf_counter()
+def on_move(*args):
+    global last_time_moved
+    last_time_moved = time.perf_counter()
+
 path_to_project = f'{'\\'.join(__file__.split('\\')[:-1])}'
 
 logger = get_logger()
@@ -78,6 +85,8 @@ logger.info("Start of program.")
 path_to_csv = os.path.join(path_to_project , 'logs', datetime.now().strftime("%m_%Y"), 
         f'{datetime.now().strftime("%d_%m_%Y")}.csv')
 
+path_to_csv = os.path.join(path_to_project , 'test.csv')
+
 logger.info(f"Path to csv: {path_to_csv}")
 
 check_csv_path(path_to_csv)
@@ -86,27 +95,40 @@ last_executable = None
 last_executable_found_datetime = datetime.now().strftime('%H:%M:%S')
 last_executable_found_time = time.perf_counter()
 
-while True:
-    current_executable = get_active_window_name()
+mouse_listener = mouse.Listener(
+    on_move=on_move)
+logger.info("Starting mouse listener.")
+mouse_listener.start()
 
-    if last_executable is None:
-        logger.info(f"First executable is {current_executable}")
-        last_executable = current_executable
+keyboard_listener = keyboard.Listener(
+    on_press=on_move)
+logger.info("Starting keyboard listener.")
+keyboard_listener.start()
 
-    if last_executable != current_executable:
-        logger.debug(f"Change of executable from {last_executable} to {current_executable}")
-        duration = time.perf_counter() - last_executable_found_time
+try:
+    while True:
+        if time.perf_counter()-last_time_moved > 60:
+            current_executable = 'AFK'
+        else: current_executable = get_active_window_name()
 
-        logger.debug(f"Previous executable duration: {duration}")
+        if last_executable is None:
+            logger.info(f"First executable is {current_executable}")
+            last_executable = current_executable
 
-        current_executable_found_time = time.perf_counter()
-        current_executable_found_datetime = datetime.now().strftime('%H:%M:%S')
+        elif last_executable != current_executable:
+            logger.debug(f"Change of executable from {last_executable} to {current_executable}")
+            duration = time.perf_counter() - last_executable_found_time
 
-        if duration > 20:
-            add_new_record(last_executable, last_executable_found_datetime, round(duration))
+            logger.debug(f"Previous executable duration: {duration}")
 
-        last_executable = current_executable
-        last_executable_found_time = current_executable_found_time
-        last_executable_found_datetime = current_executable_found_datetime
+            if duration > 20:
+                add_new_record(last_executable, last_executable_found_datetime, round(duration))
 
-    time.sleep(1)
+            last_executable = current_executable
+            last_executable_found_time = time.perf_counter()
+            last_executable_found_datetime = datetime.now().strftime('%H:%M:%S')
+
+        time.sleep(1)
+finally:
+    mouse_listener.stop()
+    keyboard_listener.stop()
