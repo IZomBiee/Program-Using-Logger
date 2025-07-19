@@ -29,23 +29,23 @@ def check_csv_path(path:str):
         file.write(','.join(['name', 'time', 'duration'])+'\n')
     
 def get_active_window_name() -> str:
-    user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-    GetForegroundWindow = user32.GetForegroundWindow
-    GetForegroundWindow.argtypes = ()
-    GetForegroundWindow.restype = wintypes.HWND
-
-    GetWindowThreadProcessId = user32.GetWindowThreadProcessId
-    GetWindowThreadProcessId.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.DWORD))
-    GetWindowThreadProcessId.restype = wintypes.DWORD
-
-    hwnd = GetForegroundWindow()
-    pid = wintypes.DWORD()
-
-    GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-
     while True:
         try:
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            GetForegroundWindow = user32.GetForegroundWindow
+            GetForegroundWindow.argtypes = ()
+            GetForegroundWindow.restype = wintypes.HWND
+
+            GetWindowThreadProcessId = user32.GetWindowThreadProcessId
+            GetWindowThreadProcessId.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.DWORD))
+            GetWindowThreadProcessId.restype = wintypes.DWORD
+
+            hwnd = GetForegroundWindow()
+            pid = wintypes.DWORD()
+
+            GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+
             process = psutil.Process(pid.value)
             executable_path = process.exe()
             executable_name = executable_path.split('\\')[-1]
@@ -58,7 +58,7 @@ def get_active_window_name() -> str:
 
 def get_logger() -> logging.Logger:
     logger = logging.getLogger("logger")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
 
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
@@ -72,7 +72,7 @@ def get_logger() -> logging.Logger:
     return logger
 
 last_time_moved = time.perf_counter()
-def on_move(*args):
+def on_move(*_):
     global last_time_moved
     last_time_moved = time.perf_counter()
 
@@ -85,8 +85,6 @@ logger.info("Start of program.")
 path_to_csv = os.path.join(path_to_project , 'logs', datetime.now().strftime("%m_%Y"), 
         f'{datetime.now().strftime("%d_%m_%Y")}.csv')
 
-path_to_csv = os.path.join(path_to_project , 'test.csv')
-
 logger.info(f"Path to csv: {path_to_csv}")
 
 check_csv_path(path_to_csv)
@@ -98,18 +96,31 @@ last_executable_found_time = time.perf_counter()
 mouse_listener = mouse.Listener(
     on_move=on_move)
 logger.info("Starting mouse listener.")
+mouse_listener.daemon = True
 mouse_listener.start()
 
 keyboard_listener = keyboard.Listener(
     on_press=on_move)
 logger.info("Starting keyboard listener.")
+keyboard_listener.daemon = True
 keyboard_listener.start()
 
+time_in_front = 0
+loop_time = time.perf_counter()
 try:
     while True:
         if time.perf_counter()-last_time_moved > 60:
             current_executable = 'AFK'
-        else: current_executable = get_active_window_name()
+            time_in_front = max(0, time_in_front-(time.perf_counter()-loop_time))
+        else:
+            current_executable = get_active_window_name()
+            time_in_front += time.perf_counter()-loop_time
+        
+        if time_in_front > 120*60:
+            logger.info(f"Sitting already {round(time_in_front/60)} minutes")
+            messagebox.showinfo("Time to take a stretch",
+                                f"You are sitting already {round(time_in_front/60)} minutes")
+            time_in_front = 0
 
         if last_executable is None:
             logger.info(f"First executable is {current_executable}")
@@ -128,6 +139,7 @@ try:
             last_executable_found_time = time.perf_counter()
             last_executable_found_datetime = datetime.now().strftime('%H:%M:%S')
 
+        loop_time = time.perf_counter()
         time.sleep(1)
 finally:
     mouse_listener.stop()
