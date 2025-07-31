@@ -58,17 +58,20 @@ def get_active_window_name() -> str:
 
 def get_logger() -> logging.Logger:
     logger = logging.getLogger("logger")
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
     file_handler = logging.FileHandler(os.path.join(path_to_project, 'last.log'))
+    file_handler.setLevel(logging.WARNING)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
     console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
+
     return logger
 
 last_time_moved = time.perf_counter()
@@ -109,7 +112,8 @@ time_in_front = 0
 loop_time = time.perf_counter()
 try:
     while True:
-        if time.perf_counter()-last_time_moved > 60:
+        if time.perf_counter()-last_time_moved > 60 and\
+            not any(browser in last_executable.lower() for browser in ('edge', 'chrome', 'firefox', 'opera')):
             current_executable = 'AFK'
             time_in_front = max(0, time_in_front-(time.perf_counter()-loop_time))
         else:
@@ -129,8 +133,6 @@ try:
         elif last_executable != current_executable:
             logger.debug(f"Change of executable from {last_executable} to {current_executable}")
             duration = time.perf_counter() - last_executable_found_time
-
-            logger.debug(f"Previous executable duration: {duration}")
 
             if duration > 20:
                 add_new_record(last_executable, last_executable_found_datetime, round(duration))
