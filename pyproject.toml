@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "program_using_logger"
-version = "1.1.2"
+version = "2.0.0"
 description = ""
 authors = ["IZomBie <patrik009009@gmail.com>"]
 readme = "README.md"

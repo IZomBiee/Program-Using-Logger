@@ -8,10 +8,11 @@ data_sums = {}
 for records in data:
     for record in records:
         try:
-            if record['name'] in data_sums:
-                data_sums[record['name']] += float(record['duration'])
-            else:
-                data_sums[record['name']] = float(record['duration'])
+            if record['duration'] is not None:
+                if record['name'] in data_sums:
+                    data_sums[record['name']] += float(record['duration'])
+                else:
+                    data_sums[record['name']] = float(record['duration'])
         except KeyError:
             continue
 
