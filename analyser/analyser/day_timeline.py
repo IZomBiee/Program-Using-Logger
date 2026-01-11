@@ -1,6 +1,9 @@
+def main():
+    pass
+
 from datetime import datetime
 from matplotlib import pyplot as plt
-from data_loader import DataLoader
+from .data_loader import DataLoader
 
 date = input("Write date (for ex. 06_03_2023 or nothing to current day) -> ")
 if date == '':
@@ -9,9 +12,10 @@ if date == '':
 data = DataLoader(date, date)
 records = data[0]
 
-records = sorted(records, key=lambda r: float(r['duration']), reverse=True)
+records = list(filter(lambda x: x['duration'] is not None and x['duration'] > 15, records))
+records = records[::-1]
 
-durations = [float(record['duration']) for record in records]
+durations = [record['duration'] for record in records]
 names = [record['name'] for record in records]
 
 total_time = sum(durations)

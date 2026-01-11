@@ -1,5 +1,8 @@
+def main():
+    pass
+
 from matplotlib import pyplot as plt
-from data_loader import DataLoader
+from .data_loader import DataLoader
 
 data = DataLoader(input("Write starting date (for ex. 06_03_2023 or nothing) -> "),
                   input("Write end date (for ex. 02_05_2026 or nothing) -> "))

@@ -7,3 +7,6 @@ logs
 .idea
 idea
 *.log
+
+grabber/target/
+**/*.rs.bk

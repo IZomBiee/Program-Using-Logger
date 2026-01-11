@@ -1,48 +1,57 @@
 ## What is the purpose of this program?
 
-This program is designed to run in the background and collect information about the time spent in various applications. It presents this data in a clear and understandable format.
+This program is designed to run on Windows in the background and collect information about the time spent in various applications. It presents this data in a clear and understandable format.
 
----
+The program consists of two parts:
 
-## How to use it?
+- Grabber - collects data while running in the background.
 
-The program is intended to run automatically at system startup. However, to run it manually:
+- Analyzer - visualizes and displays the collected data.
 
-1. Navigate to the project directory:
+## How to automatically run the grabber?
+
+1. Download the executable from the Releases page.
+
+2. Use the following command in Command Prompt with administrator privileges to add the task to Task Scheduler:
    ```shell
-   cd Desktop\\program-using-logger
+    schtasks /create /tn "Program-Using-Logger-grabber" /tr "PATH_TO_grabber.exe" /sc onlogon /delay 0000:01 /f
    ```
 
-2. Install dependencies using Poetry and run `main.py`:
-   ```shell
-   poetry install
-   poetry run python main.py
-   ```
+3. The grabber will start automatically the next time the computer logs in.
 
----
+## How to visualize the data?
 
-## How to add it to startup on Windows?
-
-1. Go to the project directory, install dependencies, and run the following command to get the path to the virtual environment's Python interpreter:
-   ```shell
-   poetry env info --executable
-   ```
-
-2. Copy the returned path, replace `python.exe` with `pythonw.exe`.
-
-3. Then use this command in Command Prompt with admin privileges to add the task to Task Scheduler:
-   ```shell
-    schtasks /create /tn "Program Logger" /tr "PATH_TO_PYTHONW PATH_TO_MAIN.PY" /sc onlogon /delay 0001:00 /f
-   ```
-
-   Replace `PATH_TO_PYTHONW` with the path you got in step 2, and `PATH_TO_MAIN.PY` with the full path to project main.py.
-
----
-
-## How to view statistics?
-
-To view statistics, run the appropriate script from the `visualization` folder. For example, to see the top 20 most-used programs within a specific time range:
-
+1. Install Python:
 ```shell
-poetry run python visualization\\top_20.py
+winget install -e --id Python.Python.3.13
+```
+
+2. Install Poetry:
+```shell
+python -m pip install poetry
+```
+
+3. Install this repository (for example, to the Desktop):
+```shell
+cd .\Desktop
+git clone https://github.com/IZomBiee/Program-Using-Logger.git
+```
+Alternatively, you can download the analyzer separately from GitHub.
+
+4. Go to the analyzer directory and install dependencies using Poetry:
+```shell
+cd Program-Using-Logger\analyser
+poetry install
+```
+
+5. Choose how to visualize the data:
+```shell
+peotry run top_20
+poetry run day_timeline
+```
+
+## Where data is stored?
+The data is stored here in Appdata\Roaming folder:
+```shell
+cd %appdata%\Program-Using-Logger
 ```

@@ -2,7 +2,6 @@ import os
 import csv
 from datetime import datetime
 
-
 class DataLoader:
     def __init__(self, starting_date: str = '', end_date: str = ''):
         self._csv_paths = []
@@ -10,7 +9,7 @@ class DataLoader:
         self.starting_date_days = 0 if starting_date == '' else self.date_to_days(starting_date)
         self.end_date_days = 10000000000000 if end_date == '' else self.date_to_days(end_date)
 
-        self.path = '.\\logs'
+        self.path = f"{os.getenv('APPDATA')}\\Program-Using-Logger\\"
         self._load_paths()
 
     def date_to_days(self, date: str) -> int:
@@ -48,9 +47,12 @@ class DataLoader:
 
         if "time" in headers:  
             for i in range(len(rows) - 1):
-                t1 = datetime.strptime(rows[i]['time'], "%H:%M:%S")
-                t2 = datetime.strptime(rows[i + 1]['time'], "%H:%M:%S")
-                duration = (t2 - t1).seconds
+                if not "Heartbeat" in rows[i]['name'] and rows[i+1]['name']:
+                    t1 = datetime.strptime(rows[i]['time'], "%H:%M:%S")
+                    t2 = datetime.strptime(rows[i + 1]['time'], "%H:%M:%S")
+                    duration = (t2 - t1).seconds
+                else: 
+                    duration = 0
                 rows[i]['duration'] = duration
 
             rows[-1]['duration'] = None

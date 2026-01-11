@@ -1,0 +1,10 @@
+[package]
+name = "grabber"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+active-win-pos-rs = "0.9.1"
+chrono = "0.4.42"
+mouse_position = "0.1.4"
+rev_lines = "0.3.0"
