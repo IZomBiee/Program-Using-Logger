@@ -47,7 +47,7 @@ class DataLoader:
 
         if "time" in headers:  
             for i in range(len(rows) - 1):
-                if not "Heartbeat" in rows[i]['name'] and rows[i+1]['name']:
+                if rows[i+1]['name']:
                     t1 = datetime.strptime(rows[i]['time'], "%H:%M:%S")
                     t2 = datetime.strptime(rows[i + 1]['time'], "%H:%M:%S")
                     duration = (t2 - t1).seconds

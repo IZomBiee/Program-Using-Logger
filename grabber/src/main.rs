@@ -1,31 +1,45 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{env::var_os, path::PathBuf};
-use active_win_pos_rs::{ActiveWindow, get_active_window};
+use active_win_pos_rs::{ActiveWindow, WindowPosition, get_active_window};
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
+use mouse_position::mouse_position::Mouse;
 use std::fs::{OpenOptions, metadata};
 use std::io;
 use std::io::{BufRead, Write};
 use std::thread;
 use std::time::{Duration, Instant};
+use std::{env::var_os, path::PathBuf};
 
 const APPDATA_FOLDER_NAME: &str = "Program-Using-Logger";
 const UPDATE_SPEED: u64 = 1000;
+const AFK_TIME_M: i64 = 10;
 const HEADER: &str = "name,time";
 const HEARTBEAT_FORMART: &str = "%H:%M:%S %d_%m_%Y";
 
 fn get_base_path() -> String {
-    format!("{}\\{}", var_os("APPDATA").map(PathBuf::from).expect("No APPDATA directory").display(),
-    APPDATA_FOLDER_NAME)
+    format!(
+        "{}\\{}",
+        var_os("APPDATA")
+            .map(PathBuf::from)
+            .expect("No APPDATA directory")
+            .display(),
+        APPDATA_FOLDER_NAME
+    )
 }
 
 fn write(activity_name: &str, time: DateTime<Local>) {
+    let activity_name = activity_name.replace(",", "'");
     let month_year = time.format("%m_%Y").to_string();
     let day_month_year = time.format("%d_%m_%Y").to_string();
-    let log_folder_path = format!("{}\\{}", &get_base_path() , &month_year);
+    let log_folder_path = format!("{}\\{}", &get_base_path(), &month_year);
 
     match std::fs::create_dir(&log_folder_path) {
-        Ok(()) => {println!("Dirrectory {} for log storaging is created", &log_folder_path)},
+        Ok(()) => {
+            println!(
+                "Dirrectory {} for log storaging is created",
+                &log_folder_path
+            )
+        }
         _ => {}
     }
 
@@ -71,14 +85,14 @@ fn write_heartbeat() {
         .create(true)
         .write(true)
         .append(false)
-        .open(format!("{}\\heartbeat.lock", &get_base_path() ))
+        .open(format!("{}\\heartbeat.lock", &get_base_path()))
         .unwrap();
     file.write_all(format!("{}", now.format(HEARTBEAT_FORMART)).as_bytes())
         .ok();
 }
 
 fn read_heartbeat() -> Option<DateTime<Local>> {
-    if let Ok(last_line) = read_last_line(&format!("{}\\heartbeat.lock", &get_base_path() )) {
+    if let Ok(last_line) = read_last_line(&format!("{}\\heartbeat.lock", &get_base_path())) {
         if let Ok(naive_dt) = NaiveDateTime::parse_from_str(&last_line, HEARTBEAT_FORMART) {
             return Some(Local.from_local_datetime(&naive_dt).unwrap());
         }
@@ -90,7 +104,7 @@ fn check_log_heartbeat(datetime: &DateTime<Local>) {
     let log_date = datetime.format("%d_%m_%Y").to_string();
     let path_to_log = format!(
         "{}\\{}\\{}.csv",
-        get_base_path() ,
+        get_base_path(),
         datetime.format("%m_%Y").to_string(),
         log_date
     );
@@ -106,26 +120,44 @@ fn check_log_heartbeat(datetime: &DateTime<Local>) {
     };
 }
 
+fn get_mouse_pos() -> (i32, i32) {
+    match Mouse::get_mouse_position() {
+        Mouse::Position { x, y } => (x, y),
+        _ => (0, 0),
+    }
+}
+
 fn main() {
     let interval = Duration::from_millis(UPDATE_SPEED);
     let mut next_tick = Instant::now();
 
-    let mut last_window: Option<ActiveWindow> = None;
+    let mut last_writed_window: Option<ActiveWindow> = None;
     let mut now = Local::now();
+    let mut last_write_time = now.clone();
+
+    let mut last_activity_time = Local::now();
+    let mut last_mouse_pos = get_mouse_pos();
 
     println!(
         "============ START OF PROGRAM ({}) ============",
         now.format("%H:%M:%S")
     );
-    
+
     match std::fs::create_dir(&get_base_path()) {
-        Ok(()) => {println!("Dirrectory {} for log storaging is created", &get_base_path())},
-        Err(err) => {println!("Can't create dirrectory at {} ({err})", &get_base_path())}
+        Ok(()) => {
+            println!(
+                "Dirrectory {} for log storaging is created",
+                &get_base_path()
+            )
+        }
+        Err(err) => {
+            println!("Can't create dirrectory at {} ({err})", &get_base_path())
+        }
     }
 
     println!(
         "Logs will be writed in: {}\\{}\\{}.csv",
-        get_base_path() ,
+        get_base_path(),
         now.format("%m_%Y").to_string(),
         now.format("%d_%m_%Y").to_string()
     );
@@ -137,16 +169,48 @@ fn main() {
     loop {
         write_heartbeat();
 
-        if let Ok(current_window) = get_active_window() {
+        let current_mouse_pos = get_mouse_pos();
+        if current_mouse_pos != last_mouse_pos {
+            last_activity_time = Local::now();
+        }
+        last_mouse_pos = current_mouse_pos;
+
+        if let Ok(mut current_window) = get_active_window() {
             now = Local::now();
-            if let Some(window) = &last_window {
+            let afk_time = now - last_activity_time;
+            let mut afk_start_time = now.clone() - afk_time;
+
+            if afk_start_time < last_write_time {
+                afk_start_time = last_write_time;
+            }
+
+            if afk_time.num_minutes() >= AFK_TIME_M {
+                current_window = ActiveWindow {
+                    title: "AFK".to_string(),
+                    process_path: PathBuf::new(),
+                    app_name: "AFK".to_string(),
+                    window_id: "".to_string(),
+                    process_id: 0,
+                    position: WindowPosition {
+                        x: 0.,
+                        y: 0.,
+                        width: 0.,
+                        height: 0.,
+                    },
+                };
+                now = afk_start_time;
+            }
+
+            if let Some(window) = &last_writed_window {
                 if !window.app_name.contains(&current_window.app_name) {
                     write(&current_window.app_name, now);
-                    last_window = Some(current_window);
+                    last_writed_window = Some(current_window);
+                    last_write_time = now;
                 }
             } else {
                 write(&current_window.app_name, now);
-                last_window = Some(current_window);
+                last_writed_window = Some(current_window);
+                last_write_time = now;
             }
         }
 
