@@ -9,12 +9,15 @@ use std::io::{BufRead, Write};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{env::var_os, path::PathBuf};
+use notify_rust::{Notification, Timeout};
+use actually_beep::beep_with_hz_and_millis;
 
 const APPDATA_FOLDER_NAME: &str = "Program-Using-Logger";
 const UPDATE_SPEED: u64 = 1000;
 const AFK_TIME_M: i64 = 10;
 const HEADER: &str = "name,time";
 const HEARTBEAT_FORMART: &str = "%H:%M:%S %d_%m_%Y";
+const STRETCH_TIME_H: u64 = 2;
 
 fn get_base_path() -> String {
     format!(
@@ -33,14 +36,11 @@ fn write(activity_name: &str, time: DateTime<Local>) {
     let day_month_year = time.format("%d_%m_%Y").to_string();
     let log_folder_path = format!("{}\\{}", &get_base_path(), &month_year);
 
-    match std::fs::create_dir(&log_folder_path) {
-        Ok(()) => {
-            println!(
-                "Dirrectory {} for log storaging is created",
-                &log_folder_path
-            )
-        }
-        _ => {}
+    if std::fs::create_dir(&log_folder_path).is_ok() {
+        println!(
+            "Dirrectory {} for log storaging is created",
+            &log_folder_path
+        )
     }
 
     let path_to_log = format!("{}\\{}.csv", &log_folder_path, &day_month_year);
@@ -49,6 +49,7 @@ fn write(activity_name: &str, time: DateTime<Local>) {
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&path_to_log)
             .unwrap();
         file.write_all(HEADER.as_bytes()).unwrap();
@@ -56,7 +57,6 @@ fn write(activity_name: &str, time: DateTime<Local>) {
 
     let mut file = OpenOptions::new()
         .create(false)
-        .write(true)
         .append(true)
         .open(&path_to_log)
         .unwrap();
@@ -76,7 +76,7 @@ fn read_last_line(path: &str) -> io::Result<String> {
         .lines()
         .filter_map(Result::ok)
         .last()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "File is empty"))
+        .ok_or_else(|| io::Error::other("File is empty"))
 }
 
 fn write_heartbeat() {
@@ -92,11 +92,10 @@ fn write_heartbeat() {
 }
 
 fn read_heartbeat() -> Option<DateTime<Local>> {
-    if let Ok(last_line) = read_last_line(&format!("{}\\heartbeat.lock", &get_base_path())) {
-        if let Ok(naive_dt) = NaiveDateTime::parse_from_str(&last_line, HEARTBEAT_FORMART) {
+    if let Ok(last_line) = read_last_line(&format!("{}\\heartbeat.lock", &get_base_path()))
+        && let Ok(naive_dt) = NaiveDateTime::parse_from_str(&last_line, HEARTBEAT_FORMART) {
             return Some(Local.from_local_datetime(&naive_dt).unwrap());
         }
-    }
     None
 }
 
@@ -105,17 +104,16 @@ fn check_log_heartbeat(datetime: &DateTime<Local>) {
     let path_to_log = format!(
         "{}\\{}\\{}.csv",
         get_base_path(),
-        datetime.format("%m_%Y").to_string(),
+        datetime.format("%m_%Y"),
         log_date
     );
     println!("Checking heartbeat for {}", path_to_log);
 
     if let Some(heartbeat_datetime) = read_heartbeat() {
-        if let Ok(last_record) = read_last_line(&path_to_log) {
-            if last_record.contains("Heartbeat") || last_record.contains(HEADER) {
+        if let Ok(last_record) = read_last_line(&path_to_log)
+            && (last_record.contains("Heartbeat") || last_record.contains(HEADER)) {
                 return;
             }
-        }
         write("Heartbeat End", heartbeat_datetime);
     };
 }
@@ -127,23 +125,37 @@ fn get_mouse_pos() -> (i32, i32) {
     }
 }
 
+
+fn stretch_notification() {
+    let _ = Notification::new()
+        .summary("Time passed")
+        .body("Time to make a stretch")
+        .icon("rust")
+        .action("default", "default")
+        .timeout(Timeout::Milliseconds(10000))
+        .show();
+
+    let _ = beep_with_hz_and_millis(500, 1000);
+}
+
 fn main() {
     let interval = Duration::from_millis(UPDATE_SPEED);
     let mut next_tick = Instant::now();
 
     let mut last_writed_window: Option<ActiveWindow> = None;
     let mut now = Local::now();
-    let mut last_write_time = now.clone();
+    let mut last_write_time = now;
 
     let mut last_activity_time = Local::now();
     let mut last_mouse_pos = get_mouse_pos();
+    let mut time_for_stretch = Duration::from_secs(0);
 
     println!(
         "============ START OF PROGRAM ({}) ============",
         now.format("%H:%M:%S")
     );
 
-    match std::fs::create_dir(&get_base_path()) {
+    match std::fs::create_dir(get_base_path()) {
         Ok(()) => {
             println!(
                 "Dirrectory {} for log storaging is created",
@@ -158,8 +170,8 @@ fn main() {
     println!(
         "Logs will be writed in: {}\\{}\\{}.csv",
         get_base_path(),
-        now.format("%m_%Y").to_string(),
-        now.format("%d_%m_%Y").to_string()
+        now.format("%m_%Y"),
+        now.format("%d_%m_%Y")
     );
 
     if let Some(heartbeat_datetime) = read_heartbeat() {
@@ -178,7 +190,7 @@ fn main() {
         if let Ok(mut current_window) = get_active_window() {
             now = Local::now();
             let afk_time = now - last_activity_time;
-            let mut afk_start_time = now.clone() - afk_time;
+            let mut afk_start_time = now - afk_time;
 
             if afk_start_time < last_write_time {
                 afk_start_time = last_write_time;
@@ -198,7 +210,17 @@ fn main() {
                         height: 0.,
                     },
                 };
+
+                if (time_for_stretch - Duration::from_millis(UPDATE_SPEED)*2) > Duration::from_secs(0) {
+                    time_for_stretch -= Duration::from_millis(UPDATE_SPEED)*2;
+                }
                 now = afk_start_time;
+            } else {
+                time_for_stretch += Duration::from_millis(UPDATE_SPEED);
+                if time_for_stretch > Duration::from_hours(STRETCH_TIME_H) {
+                    stretch_notification();
+                    time_for_stretch = Duration::from_secs(0);
+                }
             }
 
             if let Some(window) = &last_writed_window {
