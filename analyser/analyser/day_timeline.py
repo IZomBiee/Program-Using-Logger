@@ -1,90 +1,152 @@
 from datetime import datetime
-from matplotlib import pyplot as plt
+
 import matplotlib.ticker as ticker
+from matplotlib import pyplot as plt
+
 from .data_loader import DataLoader
+
 
 def main():
     date = input("Write date (for ex. 06_03_2023 or nothing to current day) -> ")
-    if date == '':
+    if date == "":
         date = datetime.now().strftime("%d_%m_%Y")
 
     data = DataLoader(date, date)
     if len(data) == 0 or not data[0]:
         print("No data found for this date.")
         return
-        
+
     records = data[0]
 
     # Filter out short durations and reverse list
-    records = list(filter(lambda x: x['duration'] is not None and x['duration'] > 60, records))
+    records = list(
+        filter(lambda x: x["duration"] is not None and x["duration"] > 60, records)
+    )
 
     if not records:
         print("No records left after filtering.")
         return
 
-    names = [record['name'] for record in records]
-    durations = [record['duration'] for record in records]
-    
-    # --- GET THE REAL STARTING TIME ---
-    # Take the time string of the very first record to be plotted
-    first_time_str = records[0]['time']
-    first_t = datetime.strptime(first_time_str, "%H:%M:%S")
-    # Convert it into total seconds since midnight
-    start_time_seconds = first_t.hour * 3600 + first_t.minute * 60 + first_t.second
+    names = [record["name"] for record in records]
+    durations = [record["duration"] for record in records]
 
-    # Merge adjacent blocks of the same app
-    merged_names = []
-    merged_durations = []
-    
-    if names:
-        merged_names.append(names[0])
-        merged_durations.append(durations[0])
-        
-        for i in range(1, len(names)):
-            if names[i] == merged_names[-1]:
-                merged_durations[-1] += durations[i]
+    start_times = []
+    for record in records:
+        t = datetime.strptime(record["time"], "%H:%M:%S")
+        start_times.append(t.hour * 3600 + t.minute * 60 + t.second)
+
+    # --- 1. PREPARE RAW DATA (No filtering yet) ---
+    parsed = []
+    for record in records:
+        t = datetime.strptime(record["time"], "%H:%M:%S")
+        start_sec = t.hour * 3600 + t.minute * 60 + t.second
+        parsed.append({"name": record["name"], "start": start_sec})
+
+    # Sort by time to ensure continuity
+    parsed.sort(key=lambda x: x["start"])
+
+    if not parsed:
+        print("No records to display.")
+        return
+
+    # --- 2. CLUSTERING & SNAP-TO-NEXT ---
+    # THRESHOLD: Apps used for less than this many seconds are "absorbed"
+    # into the previous activity to keep the graph clean.
+    SMALL_APP_THRESHOLD = 240
+
+    clean_blocks = []
+    for i in range(len(parsed)):
+        name = parsed[i]["name"]
+        start = parsed[i]["start"]
+
+        # Determine when this block ends: it ends exactly when the NEXT one starts
+        if i < len(parsed) - 1:
+            end = parsed[i + 1]["start"]
+        else:
+            # For the very last record of the day, use its original duration
+            end = start + records[i]["duration"]
+
+        duration = end - start
+
+        # If this app was used for a tiny amount of time, merge it into the previous block
+        if duration < SMALL_APP_THRESHOLD and clean_blocks:
+            clean_blocks[-1]["end"] = end
+        else:
+            # If it's the same app as the last block, just extend the last block
+            if clean_blocks and clean_blocks[-1]["name"] == name:
+                clean_blocks[-1]["end"] = end
             else:
-                merged_names.append(names[i])
-                merged_durations.append(durations[i])
+                clean_blocks.append({"name": name, "start": start, "end": end})
 
-    unique_apps = list(dict.fromkeys(merged_names))
-    colormap = plt.get_cmap('tab20')
-    color_map = {name: colormap(i / max(1, len(unique_apps)-1)) for i, name in enumerate(unique_apps)}
+    # --- 3. PLOTTING ---
+    unique_apps = list(dict.fromkeys([b["name"] for b in clean_blocks]))
+    colormap = plt.get_cmap("tab20")
+    color_map = {
+        name: colormap(i / max(1, len(unique_apps) - 1))
+        for i, name in enumerate(unique_apps)
+    }
 
-    fig, ax = plt.subplots(figsize=(12, 2))
+    fig, ax = plt.subplots(figsize=(12, 2.5))
 
-    # --- PLOT CONTINUOUSLY WITHOUT GAPS ---
-    # Start drawing at the real clock time instead of 0
-    current_start = start_time_seconds
-    for name, length in zip(merged_names, merged_durations):
-        ax.barh(0, length, left=current_start, color=color_map[name], edgecolor='white')
-        current_start += length  # Slide the next bar directly next to this one
+    for block in clean_blocks:
+        duration = block["end"] - block["start"]
+        # 1. Draw the colored bar
+        ax.barh(
+            0,
+            duration,
+            left=block["start"],
+            color=color_map[block["name"]],
+            edgecolor="none",
+        )
+
+        # 2. ADD LABELS: Only if the block is wide enough (e.g., > 4 minutes / 240s)
+        # We use your SMALL_APP_THRESHOLD here so labels only appear on non-merged blocks
+        if duration >= SMALL_APP_THRESHOLD:
+            text_x = block["start"] + (duration / 2)
+            ax.text(
+                text_x,
+                0,
+                block["name"],
+                ha="center",
+                va="center",
+                color="white",
+                fontweight="bold",
+                rotation=90,
+                fontsize=8,
+                clip_on=True,
+            )
 
     ax.set_yticks([])
-    ax.set_title(f"App Usage Timeline for {date.replace('_', '.')}")
-    # Fit the view exactly to our drawn timeline
-    ax.set_xlim(start_time_seconds, current_start)
+    ax.set_title(f"Continuous App Usage for {date.replace('_', '.')}")
 
-    # Convert the seconds on the x-axis back into HH:MM text
+    # Set limits from very first start to very last end
+    ax.set_xlim(clean_blocks[0]["start"], clean_blocks[-1]["end"])
+
+    # --- 4. FORMATTING ---
     def format_clock_time(value, tick_number):
         hours = int((value // 3600) % 24)
         minutes = int((value % 3600) // 60)
         return f"{hours:02d}:{minutes:02d}"
-        
-    ax.xaxis.set_major_formatter(ticker.FuncFormatter(format_clock_time))
-    ax.xaxis.set_major_locator(ticker.MaxNLocator(12)) # Automatically pick ~12 evenly spaced tick marks
 
-    handles = []
-    added = set()
-    for name in merged_names:
-        if name not in added:
-            handles.append(plt.Line2D([0], [0], color=color_map[name], lw=6, label=name))
-            added.add(name)
-            
-    ax.legend(handles=handles, bbox_to_anchor=(1.01, 1), loc='upper left')
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(format_clock_time))
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(12))
+
+    # Legend (optional now that you have labels)
+    handles = [
+        plt.Line2D([0], [0], color=color_map[name], lw=6, label=name)
+        for name in unique_apps
+    ]
+    ax.legend(
+        handles=handles,
+        bbox_to_anchor=(1.01, 1),
+        loc="upper left",
+        fontsize="small",
+        ncol=1,
+    )
 
     plt.tight_layout()
     plt.show()
+
 
 if __name__ == "__main__":
     main()
